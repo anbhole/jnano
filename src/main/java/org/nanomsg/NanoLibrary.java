@@ -117,7 +117,8 @@ public class NanoLibrary {
                               ByteBuffer buffer,
                               int flags);
 
-   public native int nn_sendstr(int socket,
+
+    public native int nn_sendstr(int socket,
             String str,
             int flags);
     
@@ -147,6 +148,23 @@ public class NanoLibrary {
 
     public native int nn_poll(NNPollFD[] pollFDs,
                               int timeout);
+
+    public native int nn_sendzcopy(int socket,
+                                   long message,
+                                   int flags);
+
+    public native int nn_recvzcopy(int socket,
+                                   int flags,
+                                   NativeMessage message);
+
+
+    public native int nn_sendnative(int socket,
+                                   long message,
+                                   long size,
+                                   int flags);
+
+
+    public native int nn_freemsg(long message);
 
     public int get_version()
     {

@@ -13,6 +13,10 @@ static jfieldID pollfd_fd;
 static jfieldID pollfd_events;
 static jfieldID pollfd_revents;
 
+static jclass nativemsg_class;
+static jfieldID nativemsg_message;
+static jfieldID nativemsg_size;
+
 struct symbol {
     const char* name;
     int val;
@@ -116,6 +120,10 @@ JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_load_1symbols(JNIEnv* env,
     pollfd_fd = (*env)->GetFieldID(env, pollfd_class, "fd", "I");
     pollfd_events = (*env)->GetFieldID(env, pollfd_class, "events", "I");
     pollfd_revents = (*env)->GetFieldID(env, pollfd_class, "revents", "I");
+
+    nativemsg_class = (*env)->FindClass(env, "org/nanomsg/NativeMessage");
+    nativemsg_message = (*env)->GetFieldID(env, nativemsg_class, "message", "J");
+    nativemsg_size = (*env)->GetFieldID(env, nativemsg_class, "size", "J");
 
     return count;
 }
@@ -427,10 +435,13 @@ JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1sendbyte(JNIEnv* env,
     jint ret = 0;
     
     jsize length = (*env)->GetArrayLength(env, array);
-    cbuf = (*env)->GetByteArrayElements(env, array, 0);
+    cbuf = (jbyte *)nn_allocmsg(length * sizeof(jbyte), 0);
+//    cbuf = (*env)->GetByteArrayElements(env, array, 0);
     NANO_ASSERT(cbuf);
-    ret = nn_send(socket, cbuf, length, flags);
-    (*env)->ReleaseByteArrayElements(env, array, cbuf, JNI_ABORT);
+    (*env)->GetByteArrayRegion(env, array, 0, length, cbuf);
+    ret = nn_send(socket, &cbuf, NN_MSG, flags);
+    //ret = nn_send(socket, cbuf, length, flags);
+//    (*env)->ReleaseByteArrayElements(env, array, cbuf, JNI_ABORT);
     
     return ret;
 }
@@ -446,10 +457,16 @@ JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1sendstr(JNIEnv* env,
     jint ret = 0;
     
     char *cbuf;
-    cbuf = (*env)->GetStringUTFChars( env, str , NULL ) ;
+    jsize utflength = (*env)->GetStringUTFLength(env, str);
+    jsize length = (*env)->GetStringLength(env, str);
+    cbuf = (char *) nn_allocmsg((utflength + 1) * sizeof(char), 0);
     NANO_ASSERT(cbuf);
-    ret = nn_send(socket, cbuf, strlen(cbuf) + 1, flags);
-    (*env)->ReleaseStringUTFChars(env, str,cbuf);
+//    cbuf = (*env)->GetStringUTFChars( env, str , NULL ) ;
+    (*env)->GetStringUTFRegion(env, str, 0, length, cbuf);
+    cbuf[utflength] = '\0';
+    ret = nn_send(socket, &cbuf, NN_MSG, flags);
+    //ret = nn_send(socket, cbuf, utflength + 1, flags);
+    //(*env)->ReleaseStringUTFChars(env, str,cbuf);
     return ret;
 }
 
@@ -535,4 +552,53 @@ JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1poll(JNIEnv* env,
     free(pfds);
 
 	return ret;
+}
+
+
+JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1recvzcopy(JNIEnv* env,
+                                                            jobject obj,
+                                                            jint socket,
+                                                            jint flags,
+                                                            jobject message)
+{
+    void *buff;
+    int sz = nn_recv(socket, &buff, NN_MSG, flags);
+
+    if (sz < 0) return sz;
+
+    (*env)->SetLongField(env, message, nativemsg_message, buff);
+    (*env)->SetLongField(env, message, nativemsg_size, sz);
+    return sz;
+}
+
+JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1sendzcopy(JNIEnv* env,
+                                                            jobject obj,
+                                                            jint socket,
+                                                            jlong message,
+                                                            jint flags)
+{
+    void *buf = (void *) message;
+    int sz = nn_send(socket, &buf, NN_MSG, flags);
+    return sz;
+}
+
+JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1sendnative(JNIEnv* env,
+                                                            jobject obj,
+                                                            jint socket,
+                                                            jlong message,
+                                                            jlong size,
+                                                            jint flags)
+{
+    void *buf = (void *) message;
+    int sz = nn_send(socket, buf, size, flags);
+    return sz;
+}
+
+
+JNIEXPORT jint JNICALL Java_org_nanomsg_NanoLibrary_nn_1freemsg(JNIEnv* env,
+                                                            jobject obj,
+                                                            jlong message)
+{
+    void *buf = (void *) message;
+    return nn_freemsg(buf);
 }
